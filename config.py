@@ -65,6 +65,6 @@ conf.registerGlobalValue(SPI, 'pushID',
 conf.registerGlobalValue(SPI, 'pushPath',
      registry.String("meetings/logs", _("""Path in the pushID repository to send files. It should have a folder per year. DO NOT include a trailing slash.""")))
 conf.registerGlobalValue(SPI, 'pushToken',
-     registry.String("", _("""GitLab Personal Token for pushURL. Project tokens may not work.""")))
+     registry.String("", _("""GitLab Project Token for pushURL. It requires commit permissions.""")))
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:
