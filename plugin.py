@@ -32,7 +32,8 @@ from supybot import utils, plugins, ircdb, ircutils, callbacks
 from supybot.commands import *
 from supybot.i18n import PluginInternationalization
 
-import datetime
+from base64 import b64encode
+import datetime, os, requests, urllib.parse
 
 _ = PluginInternationalization('SPI')
 
@@ -52,6 +53,8 @@ class SPI(callbacks.Plugin):
         self.votes={}
         self.reason=""
 
+    ###########################################################################
+    ## Voting utilities, original by Joerg Jaspert <joerg@debian.org>
     ###########################################################################
     @wrap(['nonInt', many('anything')])
     def poll(self, irc, msg, args, reason, voters):
@@ -126,10 +129,10 @@ class SPI(callbacks.Plugin):
         if not self.voting:
             irc.error('No vote is currently running. Start one with !poll', Raise=True, notice=True)
 
-        ## TODO Authentication
-        #if not ircdb.checkCapability(msg.prefix, "admin") and
-        #   not ircdb.checkCapability(msg.prefix, "owner"):
-        #    irc.error('You need owner or admin capability to start or close polls.', Raise=True, notice=True)
+        ## Authentication
+        if (not ircdb.checkCapability(msg.prefix, "admin") and
+           not ircdb.checkCapability(msg.prefix, "owner")):
+            irc.error('You need owner or admin capability to start or close polls.', Raise=True, notice=True)
 
         ## Disable the vote
         self.voting = False
@@ -160,6 +163,82 @@ class SPI(callbacks.Plugin):
         self.reason=""
 
     ###########################################################################
+    ## Logging utilities, contains copy-pasta from ChannelLogger and MessageParser
+    ## Copyright (c) 2010, Daniel Folkinshteyn   (MessageParser)
+    ## Copyright (c) 2010-2021, Valentin Lorentz (MessageParser)
+    ## Copyright (c) 2002-2004, Jeremiah Fincher (ChannelLogger)
+    ## Copyright (c) 2009-2010, James McCoy      (ChannelLogger)
+    ## Copyright (c) 2010-2021, Valentin Lorentz (ChannelLogger)
+    ## Copyright (c) 2024, Jonatas L. Nogueira   (SPI)
+    ###########################################################################
+    def doPrivmsg(self, irc, msg):
+        if not callbacks.addressed(irc, msg): #message is not direct command
+            self.do_privmsg_notice(irc, msg)
+
+    def do_privmsg_notice(self, irc, msg):
+        ## Determine if it can be logged or not
+        if not msg.channel:
+            return
+        if msg.channel != self.registryValue('channel'):
+            return
+
+        ## If the push key is not set, don't bother
+        if self.registryValue('pushToken') in ["", False, None]:
+            return
+
+        ## If it is the gavel, start or stop log collection
+        if msg.args[1] == self.registryValue('logKeyword'):
+            self.logging = not self.logging
+            if self.logging:
+                irc.reply("Meeting started, all public messages will now be logged.", notice=False, to=self.registryValue('channel'))
+            else:
+                irc.reply("Meeting adjourned, messages will NO LONGER be logged.", notice=False, to=self.registryValue('channel'))
+                ## TODO: Upload
+                data = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+                filename = "./tmp/%s.txt" % (data)
+                ## Upload
+                ## read the log file which has the data to be uploaded
+                with open(filename, 'rb') as f:
+                    bin_content = f.read()
+                ## encode, although it is not really necessary for ASCII text
+                b64_content = b64encode(bin_content).decode('utf-8')
+                ## create payload
+                payload = {"branch": "master", "author_email": "bot@spi-inc.org", "encoding":"base64", "author_name": "SPI IRC Bot",
+                   "content": b64_content, "commit_message": "Upload meeting logs for %s" % data}
+                ## We can replace this with requests, a more standard library
+                ## URL = /projects/:id/repository/files/:file_path
+                fpath = urllib.parse.quote_plus("%s/%s/%s.txt" % (self.registryValue('pushPath'), datetime.datetime.utcnow().strftime("%Y"), data))
+                URL = "https://gitlab.com/api/v4/projects/%s/repository/files/%s" % (self.registryValue('pushID'), fpath)
+                headers = {"Content-Type": "application/json",
+                           "PRIVATE-TOKEN": self.registryValue('pushToken') }
+                res = requests.post(URL, headers=headers, json=payload)
+                if res.status_code not in [200, 201]:
+                    irc.reply("Logs upload failed: %d" % res.status_code, notice=True)
+                    irc.reply("%s" % res.text, notice=True)
+                else:
+                    irc.reply("Logs were uploaded to https://spi-inc.org/%s" % (urllib.parse.unquote_plus(fpath)), notice=False)
+                ## Remove the file
+                os.remove(filename)
+
+            ## The gavel itself should not be recorded
+            return
+
+        ## If log collection is disabled, there's nothing to do
+        if not self.logging:
+            return
+
+        ## Otherwise, we must log it
+        ## We're doing this the INEFFICIENT way because this is a hack
+        data = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        time = datetime.datetime.utcnow().strftime("%H:%M")
+        filename = "./tmp/%s.txt" % (data) ## FIXME: de-hardcode tmp/
+
+        with open(filename, "a") as f:
+            f.write("%s < %s> %s\n" % (time, msg.nick, msg.args[1]))
+
+        #irc.reply("%s < %s> %s" % (time, msg.nick, msg.args[1]), notice=True)
+        #irc.reply("Message received: [%s] %s" % (data, msg.args[1]), notice=True)
+        pass
 
 Class = SPI
 

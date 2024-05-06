@@ -59,11 +59,12 @@ conf.registerGlobalValue(SPI, 'channel',
      registry.String("#spi", _("""Channel on which votes and logging happen.""")))
 conf.registerGlobalValue(SPI, 'logKeyword',
      registry.String("*GAVEL*", _("""Keyword to begin/stop log collection.""")))
-conf.registerGlobalValue(SPI, 'pushURL',
-     registry.String("", _("""When set, the URL to where logs are pushed to.""")))
-conf.registerGlobalValue(SPI, 'pushUser',
-     registry.String("", _("""Username for pushURL.""")))
+## For GitLab API v4, we need the project ID and the file path + a personal token
+conf.registerGlobalValue(SPI, 'pushID',
+     registry.String("57556745", _("""Project ID in GitLab for auto-push. Can be gotten from web interface.""")))
+conf.registerGlobalValue(SPI, 'pushPath',
+     registry.String("meetings/logs", _("""Path in the pushID repository to send files. It should have a folder per year. DO NOT include a trailing slash.""")))
 conf.registerGlobalValue(SPI, 'pushToken',
-     registry.String("", _("""Password-like token for pushURL.""")))
+     registry.String("", _("""GitLab Personal Token for pushURL. Project tokens may not work.""")))
 
 # vim:set shiftwidth=4 tabstop=4 expandtab textwidth=79:
